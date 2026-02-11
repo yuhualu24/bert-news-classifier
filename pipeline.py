@@ -6,7 +6,9 @@ import torch
 
 from data.bbc_data_preprocessor import BBCDataPreprocessor
 from data.ag_news_preprocessor import AGNewsPreprocessor
-from model.classifier import BBCBertClassifier
+from data.huffpost_news_preprocessor import HuffPostNewsPreprocessor
+from data.reuters_preprocessor import ReutersPreprocessor
+from model.classifier import BertClassifier
 from test.trainer import Trainer
 from test.evaluator import Evaluator
 from config import Config
@@ -71,15 +73,29 @@ def run_pipeline(
             batch_size=config.batch_size,
             max_samples=config.max_samples,
         )
+    elif dataset_name == "huffpost_news":
+        preprocessor = HuffPostNewsPreprocessor(
+            model_name=config.model_name,
+            max_length=config.max_length,
+            batch_size=config.batch_size,
+            max_samples=config.max_samples,
+        )
+    elif dataset_name == "reuters":
+        preprocessor = ReutersPreprocessor(
+            model_name=config.model_name,
+            max_length=config.max_length,
+            batch_size=config.batch_size,
+            max_samples=config.max_samples,
+        )
     else:
-        raise ValueError(f"Unknown dataset: {dataset_name}. Use 'bbc' or 'ag_news'.")
+        raise ValueError(f"Unknown dataset: {dataset_name}. Use 'bbc', 'ag_news', 'huffpost_news', or 'reuters'.")
 
     train_loader, val_loader = preprocessor.run()
     logger.info("Data preprocessing completed successfully")
 
     # 2. Build model
     config.num_labels = preprocessor.num_labels
-    model = BBCBertClassifier(config=config)
+    model = BertClassifier(config=config)
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(

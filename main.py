@@ -42,10 +42,24 @@ if __name__ == "__main__":
     # )
 
     # Option 2: AG News (from HuggingFace, with sample limit for fast experimentation)
+    # results = run_pipeline(
+    #     dataset_name="ag_news",
+    #     num_epochs=3,
+    #     max_samples=None,
+    # )
+
+    # Option 3: HuffPost News (from HuggingFace)
+    # results = run_pipeline(
+    #     dataset_name="huffpost_news",
+    #     num_epochs=3,
+    #     max_samples=1000,
+    # )
+
+    # Option 4: Reuters-21578 (from HuggingFace, 8 classes)
     results = run_pipeline(
-        dataset_name="ag_news",
+        dataset_name="reuters",
         num_epochs=3,
-        max_samples=None,
+        max_samples=1000,
     )
 
     logger.info("Log saved to %s", log_path)

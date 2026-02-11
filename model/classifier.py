@@ -19,7 +19,7 @@ class ClassifierOutput:
     logits: torch.Tensor
 
 
-class BBCBertClassifier(nn.Module):
+class BertClassifier(nn.Module):
     """
     Base BertModel for feature extraction with a custom linear classification head.
 
@@ -90,7 +90,7 @@ class BBCBertClassifier(nn.Module):
         return save_dir
 
     @classmethod
-    def load(cls, path: str, config: Config) -> "BBCBertClassifier":
+    def load(cls, path: str, config: Config) -> "BertClassifier":
         """Load a previously saved model."""
         instance = cls.__new__(cls)
         nn.Module.__init__(instance)

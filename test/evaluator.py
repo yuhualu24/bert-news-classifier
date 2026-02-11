@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report, confusion_matrix
 
 from config import Config
-from model.classifier import BBCBertClassifier
+from model.classifier import BertClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class Evaluator:
 
     def __init__(
         self,
-        model: BBCBertClassifier,
+        model: BertClassifier,
         config: Config,
         device: torch.device | None = None,
     ):
@@ -51,14 +51,15 @@ class Evaluator:
             all_labels.extend(batch["labels"].cpu().tolist())
 
         target_names = self.config.label_names or None
+        labels = list(range(len(target_names))) if target_names else None
 
         report_str = classification_report(
-            all_labels, all_preds, target_names=target_names
+            all_labels, all_preds, target_names=target_names, labels=labels
         )
         report_dict = classification_report(
-            all_labels, all_preds, target_names=target_names, output_dict=True
+            all_labels, all_preds, target_names=target_names, labels=labels, output_dict=True
         )
-        cm = confusion_matrix(all_labels, all_preds)
+        cm = confusion_matrix(all_labels, all_preds, labels=labels)
 
         logger.info("Classification Report:\n%s", report_str)
         logger.info("Confusion Matrix:\n%s", cm)

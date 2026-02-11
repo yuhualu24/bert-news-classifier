@@ -6,7 +6,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 
 from config import Config
-from model.classifier import BBCBertClassifier
+from model.classifier import BertClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class Trainer:
 
     def __init__(
         self,
-        model: BBCBertClassifier,
+        model: BertClassifier,
         config: Config,
         device: torch.device | None = None,
     ):

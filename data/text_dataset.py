@@ -3,7 +3,7 @@ from torch.utils.data import Dataset
 from transformers import BatchEncoding
 
 
-class BBCDataset(Dataset):
+class TextClassificationDataset(Dataset):
     """PyTorch Dataset that pairs BERT tokenizer encodings with integer labels."""
 
     def __init__(self, encodings: BatchEncoding, labels: list[int]):

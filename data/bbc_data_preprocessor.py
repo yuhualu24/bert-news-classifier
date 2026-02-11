@@ -5,7 +5,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from transformers import BertTokenizer
 from torch.utils.data import DataLoader
-from data.bbc_dataset import BBCDataset
+from data.text_dataset import TextClassificationDataset
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,8 @@ class BBCDataPreprocessor:
         train_enc = self.tokenizer(train_texts, truncation=True, padding="max_length", max_length=self.max_length, return_tensors="pt")
         val_enc = self.tokenizer(val_texts, truncation=True, padding="max_length", max_length=self.max_length, return_tensors="pt")
 
-        train_loader = DataLoader(BBCDataset(train_enc, train_labels), batch_size=self.batch_size, shuffle=True)
-        val_loader = DataLoader(BBCDataset(val_enc, val_labels), batch_size=self.batch_size)
+        train_loader = DataLoader(TextClassificationDataset(train_enc, train_labels), batch_size=self.batch_size, shuffle=True)
+        val_loader = DataLoader(TextClassificationDataset(val_enc, val_labels), batch_size=self.batch_size)
 
         logger.info("Ready -> %d train / %d val samples", len(train_labels), len(val_labels))
         return train_loader, val_loader

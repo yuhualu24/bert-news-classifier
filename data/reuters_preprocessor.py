@@ -7,15 +7,21 @@ from data.text_dataset import TextClassificationDataset
 
 logger = logging.getLogger(__name__)
 
-AG_NEWS_LABEL_NAMES = ["World", "Sports", "Business", "Sci/Tech"]
+REUTERS_LABEL_NAMES = [
+    "acq", "crude", "earn", "grain", "interest", "money-fx", "ship", "trade"
+]
 
 
-class AGNewsPreprocessor:
+class ReutersPreprocessor:
     """
-    Preprocesses the AG News dataset (from HuggingFace) for BERT classification.
+    Preprocesses the Reuters-21578 (8-class) dataset from HuggingFace
+    for BERT classification.
+
+    This dataset comes with pre-defined train/test splits and integer labels,
+    so no manual splitting or label encoding is needed.
 
     Usage:
-        preprocessor = AGNewsPreprocessor()
+        preprocessor = ReutersPreprocessor()
         train_loader, val_loader = preprocessor.run()
     """
 
@@ -34,14 +40,18 @@ class AGNewsPreprocessor:
 
     def run(self) -> tuple[DataLoader, DataLoader]:
         """Download -> (optionally limit) -> tokenize -> DataLoaders."""
-        ds = load_dataset("ag_news")
+        ds = load_dataset("yangwang825/reuters-21578")
 
         train_ds = ds["train"]
         val_ds = ds["test"]
 
         if self.max_samples is not None:
-            train_ds = train_ds.shuffle(seed=42).select(range(min(self.max_samples, len(train_ds))))
-            val_ds = val_ds.shuffle(seed=42).select(range(min(self.max_samples, len(val_ds))))
+            train_ds = train_ds.shuffle(seed=42).select(
+                range(min(self.max_samples, len(train_ds)))
+            )
+            val_ds = val_ds.shuffle(seed=42).select(
+                range(min(self.max_samples, len(val_ds)))
+            )
 
         train_texts = list(train_ds["text"])
         train_labels = list(train_ds["label"])
@@ -49,8 +59,8 @@ class AGNewsPreprocessor:
         val_labels = list(val_ds["label"])
 
         logger.info(
-            "Loaded AG News — %d train / %d val samples across %s",
-            len(train_texts), len(val_texts), AG_NEWS_LABEL_NAMES,
+            "Loaded Reuters-21578 — %d train / %d val samples across %s",
+            len(train_texts), len(val_texts), REUTERS_LABEL_NAMES,
         )
 
         train_enc = self.tokenizer(
@@ -63,10 +73,12 @@ class AGNewsPreprocessor:
         )
 
         train_loader = DataLoader(
-            TextClassificationDataset(train_enc, train_labels), batch_size=self.batch_size, shuffle=True,
+            TextClassificationDataset(train_enc, train_labels),
+            batch_size=self.batch_size, shuffle=True,
         )
         val_loader = DataLoader(
-            TextClassificationDataset(val_enc, val_labels), batch_size=self.batch_size,
+            TextClassificationDataset(val_enc, val_labels),
+            batch_size=self.batch_size,
         )
 
         logger.info("Ready -> %d train / %d val batches", len(train_loader), len(val_loader))
@@ -74,8 +86,8 @@ class AGNewsPreprocessor:
 
     @property
     def num_labels(self) -> int:
-        return len(AG_NEWS_LABEL_NAMES)
+        return len(REUTERS_LABEL_NAMES)
 
     @property
     def label_names(self) -> list[str]:
-        return AG_NEWS_LABEL_NAMES
+        return REUTERS_LABEL_NAMES
