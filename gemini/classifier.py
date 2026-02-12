@@ -3,7 +3,7 @@ import os
 
 from google import genai
 from google.genai import types
-
+from enum import Enum
 from gemini.prompt import SYSTEM_INSTRUCTION, build_classification_prompt
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,10 @@ class GeminiClassifier:
         self.client = genai.Client(api_key=resolved_key)
         self.total_input_tokens = 0
         self.total_output_tokens = 0
+        self._category_enum = Enum(
+            "Category",
+            {name.replace(" ", "_").replace("&", "AND"): name for name in label_names}
+        )
 
     def classify(self, text: str) -> str:
         """
@@ -52,7 +56,27 @@ class GeminiClassifier:
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
                 temperature=0.0,
-                max_output_tokens=50,
+                max_output_tokens=200,
+                response_mime_type="text/x.enum",
+                response_schema=self._category_enum,
+                safety_settings=[
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_HARASSMENT",
+                        threshold="BLOCK_NONE",
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_HATE_SPEECH",
+                        threshold="BLOCK_NONE",
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        threshold="BLOCK_NONE",
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                        threshold="BLOCK_NONE",
+                    ),
+                ],
             ),
         )
 
@@ -63,7 +87,10 @@ class GeminiClassifier:
 
         # Handle empty or blocked responses
         if response.text is None:
-            logger.warning("Gemini returned None response (possibly blocked by safety filters)")
+            logger.warning("Gemini returned None response")
+            logger.warning(f"None response. Prompt feedback: {response.prompt_feedback}")
+            if response.candidates:
+                logger.warning(f"Finish reason: {response.candidates[0].finish_reason}")
             return "UNKNOWN"
 
         raw = response.text.strip().upper()

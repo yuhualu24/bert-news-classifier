@@ -69,6 +69,7 @@ def load_and_split_data(config: Config, data_path: str | None = None):
     dataset_name = config.dataset_name
 
     if dataset_name == "bbc":
+        logger.info("Loading BBC dataset from: %s", data_path)
         if data_path is None:
             raise ValueError("data_path is required for the BBC dataset")
         texts, labels = [], []
@@ -92,6 +93,7 @@ def load_and_split_data(config: Config, data_path: str | None = None):
         val_label_names = [label_encoder.inverse_transform([idx])[0] for idx in val_labels]
 
     elif dataset_name == "ag_news":
+        logger.info("Loading AG News dataset from HuggingFace")
         ds = load_dataset("ag_news")
         train_ds, val_ds = ds["train"], ds["test"]
 
@@ -107,6 +109,7 @@ def load_and_split_data(config: Config, data_path: str | None = None):
         val_label_names = [label_names[idx] for idx in val_labels]
 
     elif dataset_name == "huffpost_news":
+        logger.info("Loading HuffPost News dataset from HuggingFace")
         ds = load_dataset("heegyu/news-category-dataset")
         full_ds = ds["train"]
 
@@ -132,6 +135,7 @@ def load_and_split_data(config: Config, data_path: str | None = None):
         val_label_names = [label_encoder.inverse_transform([idx])[0] for idx in val_labels]
 
     elif dataset_name == "reuters":
+        logger.info("Loading Reuters-21578 dataset from HuggingFace")
         ds = load_dataset("yangwang825/reuters-21578")
         train_ds, val_ds = ds["train"], ds["test"]
 
@@ -336,9 +340,9 @@ if __name__ == "__main__":
     logger.info("Comparison log: %s", log_path)
 
     # --- Configuration ---
-    DATASET_NAME = "reuters"  # Options: "bbc", "ag_news", "huffpost_news", "reuters"
+    DATASET_NAME = "huffpost_news"  # Options: "bbc", "ag_news", "huffpost_news", "reuters"
     DATA_PATH = None                # Required only for "bbc" (e.g. "bbc")
-    MAX_SAMPLES = 2500              # Total dataset samples (train + val)
+    MAX_SAMPLES = 1000              # Total dataset samples (train + val)
     NUM_EPOCHS = 3
     GEMINI_DELAY = 1.0              # Seconds between Gemini API calls
 

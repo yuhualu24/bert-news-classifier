@@ -31,6 +31,8 @@ class HuffPostNewsPreprocessor:
         ds = load_dataset("heegyu/news-category-dataset")
         full_ds = ds["train"]
 
+        full_ds = self.merge(full_ds)
+
         if self.max_samples is not None:
             full_ds = full_ds.shuffle(seed=42).select(range(min(self.max_samples, len(full_ds))))
 
@@ -71,7 +73,36 @@ class HuffPostNewsPreprocessor:
         logger.info("Ready -> %d train / %d val batches", len(train_loader), len(val_loader))
         return train_loader, val_loader
 
+    def merge(self, ds):
 
+        # manually merge similar categories
+        CATEGORY_MAPPING = {
+            # Duplicates — exact same topic, different names
+            "PARENTS": "PARENTING",
+            "STYLE": "STYLE & BEAUTY",
+            "TASTE": "FOOD & DRINK",
+            "THE WORLDPOST": "WORLD NEWS",
+            "WORLDPOST": "WORLD NEWS",
+            "GREEN": "ENVIRONMENT",
+            "ENVIRONMENT": "ENVIRONMENT",  # normalize from ENVIRO if present
+            "HEALTHY LIVING": "WELLNESS",
+            "ARTS & CULTURE": "ARTS",
+
+            # Thematic merges — closely related topics
+            # "COMEDY": "ENTERTAINMENT",
+            # "WEIRD NEWS": "ENTERTAINMENT",
+            # "FIFTY": "LIFESTYLE",
+            # "HOME & LIVING": "LIFESTYLE",
+            # "WEDDINGS": "LIFESTYLE",
+            # "DIVORCE": "LIFESTYLE",
+            # "GOOD NEWS": "MISCELLANEOUS",
+            # "IMPACT": "MISCELLANEOUS",
+        }
+
+        def remap_category(category):
+            return CATEGORY_MAPPING.get(category, category)
+
+        return ds.map(lambda x: {"category": remap_category(x["category"])})
 
     @property
     def num_labels(self) -> int:
@@ -82,8 +113,8 @@ class HuffPostNewsPreprocessor:
         return list(self.label_encoder.classes_)
 
 
-if __name__ == "__main__":
-
-    preprocessor = HuffPostNewsPreprocessor()
-    train_loader, val_loader = preprocessor.run()
-    print(len(train_loader), len(val_loader))
+# if __name__ == "__main__":
+#
+#     preprocessor = HuffPostNewsPreprocessor()
+#     train_loader, val_loader = preprocessor.run()
+#     print(len(train_loader), len(val_loader))
