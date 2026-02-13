@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from data.text_dataset import TextClassificationDataset
+from data.preprocessor_result import PreprocessorResult
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ class HuffPostNewsPreprocessor:
         self.tokenizer = BertTokenizer.from_pretrained(model_name)
         self.label_encoder = LabelEncoder()
 
-    def run(self) -> tuple[DataLoader, DataLoader]:
+    def run(self) -> PreprocessorResult:
 
         ds = load_dataset("heegyu/news-category-dataset")
         full_ds = ds["train"]
@@ -50,6 +51,10 @@ class HuffPostNewsPreprocessor:
             test_size=self.test_size, stratify=labels_encoded, random_state=42,
         )
 
+        val_label_names_str = [
+            self.label_encoder.inverse_transform([idx])[0] for idx in val_labels
+        ]
+
         logger.info("Loaded HuffPost News — %d train / %d val samples across %d categories",
                     len(train_texts), len(val_texts), len(self.label_encoder.classes_))
 
@@ -71,7 +76,15 @@ class HuffPostNewsPreprocessor:
         )
 
         logger.info("Ready -> %d train / %d val batches", len(train_loader), len(val_loader))
-        return train_loader, val_loader
+        return PreprocessorResult(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            val_texts=val_texts,
+            val_labels_encoded=val_labels,
+            val_label_names_str=val_label_names_str,
+            label_names=list(self.label_encoder.classes_),
+            num_labels=len(self.label_encoder.classes_),
+        )
 
     def merge(self, ds):
 

@@ -6,6 +6,7 @@ from sklearn.model_selection import train_test_split
 from transformers import BertTokenizer
 from torch.utils.data import DataLoader
 from data.text_dataset import TextClassificationDataset
+from data.preprocessor_result import PreprocessorResult
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class BBCDataPreprocessor:
         logger.info("Loaded %d articles across %s", len(texts), sorted(set(labels)))
         return texts, labels
 
-    def run(self) -> tuple[DataLoader, DataLoader]:
+    def run(self) -> PreprocessorResult:
         """Load -> encode -> split -> tokenize -> DataLoaders."""
         texts, labels = self.load_raw_data()
         labels_encoded = self.label_encoder.fit_transform(labels).tolist()
@@ -60,6 +61,10 @@ class BBCDataPreprocessor:
             test_size=self.test_size, stratify=labels_encoded, random_state=42,
         )
 
+        val_label_names_str = [
+            self.label_encoder.inverse_transform([idx])[0] for idx in val_labels
+        ]
+
         train_enc = self.tokenizer(train_texts, truncation=True, padding="max_length", max_length=self.max_length, return_tensors="pt")
         val_enc = self.tokenizer(val_texts, truncation=True, padding="max_length", max_length=self.max_length, return_tensors="pt")
 
@@ -67,7 +72,15 @@ class BBCDataPreprocessor:
         val_loader = DataLoader(TextClassificationDataset(val_enc, val_labels), batch_size=self.batch_size)
 
         logger.info("Ready -> %d train / %d val samples", len(train_labels), len(val_labels))
-        return train_loader, val_loader
+        return PreprocessorResult(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            val_texts=val_texts,
+            val_labels_encoded=val_labels,
+            val_label_names_str=val_label_names_str,
+            label_names=list(self.label_encoder.classes_),
+            num_labels=len(self.label_encoder.classes_),
+        )
 
     @property
     def num_labels(self) -> int:

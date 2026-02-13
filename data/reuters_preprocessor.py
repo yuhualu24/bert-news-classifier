@@ -4,6 +4,7 @@ from datasets import load_dataset
 from transformers import BertTokenizer
 from torch.utils.data import DataLoader
 from data.text_dataset import TextClassificationDataset
+from data.preprocessor_result import PreprocessorResult
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class ReutersPreprocessor:
 
         self.tokenizer = BertTokenizer.from_pretrained(model_name)
 
-    def run(self) -> tuple[DataLoader, DataLoader]:
+    def run(self) -> PreprocessorResult:
         """Download -> (optionally limit) -> tokenize -> DataLoaders."""
         ds = load_dataset("yangwang825/reuters-21578")
 
@@ -57,6 +58,7 @@ class ReutersPreprocessor:
         train_labels = list(train_ds["label"])
         val_texts = list(val_ds["text"])
         val_labels = list(val_ds["label"])
+        val_label_names_str = [REUTERS_LABEL_NAMES[idx] for idx in val_labels]
 
         logger.info(
             "Loaded Reuters-21578 — %d train / %d val samples across %s",
@@ -82,7 +84,15 @@ class ReutersPreprocessor:
         )
 
         logger.info("Ready -> %d train / %d val batches", len(train_loader), len(val_loader))
-        return train_loader, val_loader
+        return PreprocessorResult(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            val_texts=val_texts,
+            val_labels_encoded=val_labels,
+            val_label_names_str=val_label_names_str,
+            label_names=list(REUTERS_LABEL_NAMES),
+            num_labels=len(REUTERS_LABEL_NAMES),
+        )
 
     @property
     def num_labels(self) -> int:
