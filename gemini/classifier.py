@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 
 from google import genai
 from google.genai import types
@@ -41,6 +42,9 @@ class GeminiClassifier:
             {name.replace(" ", "_").replace("&", "AND"): name for name in label_names}
         )
 
+    MAX_RETRIES = 3
+    INITIAL_BACKOFF_S = 1.0
+
     def classify(self, text: str) -> str:
         """
         Classify a single text into one of the valid labels.
@@ -50,35 +54,50 @@ class GeminiClassifier:
         """
         prompt = build_classification_prompt(text, self.label_names)
 
-        response = self.client.models.generate_content(
-            model=self.MODEL_NAME,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                temperature=0.0,
-                max_output_tokens=200,
-                response_mime_type="text/x.enum",
-                response_schema=self._category_enum,
-                safety_settings=[
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_HARASSMENT",
-                        threshold="BLOCK_NONE",
+        response = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.MODEL_NAME,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        temperature=0.0,
+                        max_output_tokens=200,
+                        response_mime_type="text/x.enum",
+                        response_schema=self._category_enum,
+                        safety_settings=[
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_HARASSMENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_HATE_SPEECH",
+                                threshold="BLOCK_NONE",
+                            ),
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                        ],
                     ),
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_HATE_SPEECH",
-                        threshold="BLOCK_NONE",
-                    ),
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                        threshold="BLOCK_NONE",
-                    ),
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                        threshold="BLOCK_NONE",
-                    ),
-                ],
-            ),
-        )
+                )
+                break
+            except Exception as e:
+                wait = self.INITIAL_BACKOFF_S * (2 ** attempt)
+                logger.warning(
+                    "Gemini API error (attempt %d/%d): %s — retrying in %.1fs",
+                    attempt + 1, self.MAX_RETRIES, e, wait,
+                )
+                time.sleep(wait)
+
+        if response is None:
+            logger.error("Gemini API failed after %d retries, returning UNKNOWN", self.MAX_RETRIES)
+            return "UNKNOWN"
 
         # Track token usage
         if response.usage_metadata:

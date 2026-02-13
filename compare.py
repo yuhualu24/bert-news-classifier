@@ -29,6 +29,10 @@ from gemini.batch_runner import GeminiBatchRunner
 from data.ag_news_preprocessor import AG_NEWS_LABEL_NAMES
 from data.reuters_preprocessor import REUTERS_LABEL_NAMES
 
+from transformers import BertTokenizer
+from data.text_dataset import TextClassificationDataset
+from torch.utils.data import DataLoader
+
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
 logger = logging.getLogger(__name__)
 
@@ -169,9 +173,6 @@ def run_bert(
     label_names, config,
 ) -> dict:
     """Train BERT and evaluate on the val set. Returns metrics + timing."""
-    from transformers import BertTokenizer
-    from data.text_dataset import TextClassificationDataset
-    from torch.utils.data import DataLoader
 
     tokenizer = BertTokenizer.from_pretrained(config.model_name)
 
@@ -344,7 +345,7 @@ if __name__ == "__main__":
     DATA_PATH = None                # Required only for "bbc" (e.g. "bbc")
     MAX_SAMPLES = 1000              # Total dataset samples (train + val)
     NUM_EPOCHS = 3
-    GEMINI_DELAY = 1.0              # Seconds between Gemini API calls
+    GEMINI_DELAY = 0.5              # Seconds between Gemini API calls
 
     config = Config(
         dataset_name=DATASET_NAME,
