@@ -1,5 +1,5 @@
 """
-BERT vs Gemini 2.5 Flash comparison on any supported news dataset.
+BERT vs Gemini 2.5 Flash Lite comparison on any supported news dataset.
 
 Supports: bbc, ag_news, huffpost_news, reuters.
 
@@ -41,11 +41,11 @@ logger = logging.getLogger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def setup_logging() -> str:
+def setup_logging(dataset_name: str) -> str:
     """Configure console + file logging. Returns the log file path."""
     os.makedirs("outputs/logs", exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = f"outputs/logs/compare_{timestamp}.txt"
+    log_path = f"outputs/logs/compare_bert_{dataset_name}_{timestamp}.txt"
 
     root = logging.getLogger()
     root.setLevel(logging.INFO)
@@ -299,17 +299,23 @@ def format_time(seconds: float) -> str:
         return f"{secs}s"
 
 
-def log_comparison(bert_results: dict, gemini_results: dict, num_samples: int) -> str:
+def log_comparison(
+    bert_results: dict, gemini_results: dict, num_samples: int,
+    dataset_name: str, bert_model_name: str, gemini_model_name: str,
+) -> str:
     """Format and return a comparison summary string."""
     sep = "=" * 70
     gemini_cost_str = f"${gemini_results['cost_usd']:.4f}"
     lines = [
         sep,
-        "BERT vs Gemini 2.5 Flash — Comparison Results",
+        f"BERT vs {gemini_model_name} — Comparison Results",
         sep,
+        f"Dataset:          {dataset_name}",
+        f"BERT model:       {bert_model_name}",
+        f"Gemini model:     {gemini_model_name}",
         f"Evaluation samples: {num_samples}",
         "",
-        f"{'Metric':<20} {'BERT':>15} {'Gemini 2.5 Flash':>20}",
+        f"{'Metric':<20} {'BERT':>15} {gemini_model_name:>20}",
         f"{'-'*20} {'-'*15} {'-'*20}",
         f"{'Accuracy':<20} {bert_results['accuracy']:>15.4f} {gemini_results['accuracy']:>20.4f}",
         f"{'Macro-F1':<20} {bert_results['macro_f1']:>15.4f} {gemini_results['macro_f1']:>20.4f}",
@@ -337,15 +343,15 @@ def log_comparison(bert_results: dict, gemini_results: dict, num_samples: int) -
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    log_path = setup_logging()
-    logger.info("Comparison log: %s", log_path)
-
     # --- Configuration ---
     DATASET_NAME = "huffpost_news"  # Options: "bbc", "ag_news", "huffpost_news", "reuters"
     DATA_PATH = None                # Required only for "bbc" (e.g. "bbc")
-    MAX_SAMPLES = 1000              # Total dataset samples (train + val)
-    NUM_EPOCHS = 3
+    MAX_SAMPLES = None              # Total dataset samples (train + val)
+    NUM_EPOCHS = 8
     GEMINI_DELAY = 0.5              # Seconds between Gemini API calls
+
+    log_path = setup_logging(dataset_name=DATASET_NAME)
+    logger.info("Comparison log: %s", log_path)
 
     config = Config(
         dataset_name=DATASET_NAME,
@@ -374,17 +380,24 @@ if __name__ == "__main__":
     )
 
     # --- Compare ---
-    summary = log_comparison(bert_results, gemini_results, len(val_texts))
+    gemini_model_name = GeminiClassifier.MODEL_NAME
+    summary = log_comparison(
+        bert_results, gemini_results, len(val_texts),
+        dataset_name=DATASET_NAME,
+        bert_model_name=config.model_name,
+        gemini_model_name=gemini_model_name,
+    )
     logger.info("\n%s", summary)
 
     # Also save comparison to a dedicated file
     os.makedirs("outputs", exist_ok=True)
-    comparison_path = f"outputs/comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    comparison_path = f"outputs/comparison_bert_{DATASET_NAME}_{timestamp}.txt"
     with open(comparison_path, "w") as f:
         f.write(summary)
-        f.write("\n\n--- BERT Classification Report ---\n")
+        f.write(f"\n\n--- BERT ({config.model_name}) Classification Report ---\n")
         f.write(bert_results["report"])
-        f.write("\n\n--- Gemini Classification Report ---\n")
+        f.write(f"\n\n--- Gemini ({gemini_model_name}) Classification Report ---\n")
         f.write(gemini_results["report"])
 
     logger.info("Comparison saved to %s", comparison_path)

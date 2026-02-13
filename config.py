@@ -31,6 +31,7 @@ class Config:
     learning_rate: float = 2e-5
     weight_decay: float = 0.01
     num_epochs: int = 3
+    early_stopping_patience: int = 2  # Stop after N epochs with no val_loss improvement
 
     # Label ordering (alphabetical by default, set after loading)
     label_names: List[str] = field(default_factory=list)

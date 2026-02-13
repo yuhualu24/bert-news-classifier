@@ -91,3 +91,10 @@ class ReutersPreprocessor:
     @property
     def label_names(self) -> list[str]:
         return REUTERS_LABEL_NAMES
+
+
+# if __name__ == "__main__":
+#
+#     preprocessor = ReutersPreprocessor()
+#     train_loader, val_loader = preprocessor.run()
+#     print(len(train_loader), len(val_loader))

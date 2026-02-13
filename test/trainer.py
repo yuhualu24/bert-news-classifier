@@ -1,3 +1,4 @@
+import copy
 import logging
 from dataclasses import dataclass
 
@@ -96,10 +97,20 @@ class Trainer:
     def train(
         self, train_loader: DataLoader, val_loader: DataLoader
     ) -> list[EpochMetrics]:
-        """Run the training loop for config.num_epochs."""
+        """Run the training loop with early stopping.
+
+        Tracks the best val_loss and restores the best model weights
+        if training is stopped early or completes all epochs.
+        """
+        patience = self.config.early_stopping_patience
         logger.info(
-            "Starting training for %d epochs on %s", self.config.num_epochs, self.device
+            "Starting training for up to %d epochs on %s (early stopping patience=%d)",
+            self.config.num_epochs, self.device, patience,
         )
+
+        best_val_loss = float("inf")
+        best_model_state = None
+        epochs_without_improvement = 0
 
         for epoch in range(1, self.config.num_epochs + 1):
             train_loss = self._train_one_epoch(train_loader)
@@ -116,5 +127,30 @@ class Trainer:
                 val_loss,
                 val_acc,
             )
+
+            # Track best model
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_model_state = copy.deepcopy(self.model.state_dict())
+                epochs_without_improvement = 0
+                logger.info("  ↳ New best val_loss=%.4f — saving model weights", val_loss)
+            else:
+                epochs_without_improvement += 1
+                logger.info(
+                    "  ↳ No improvement for %d epoch(s) (best val_loss=%.4f)",
+                    epochs_without_improvement, best_val_loss,
+                )
+
+            if epochs_without_improvement >= patience:
+                logger.info(
+                    "Early stopping triggered after %d epochs (patience=%d)",
+                    epoch, patience,
+                )
+                break
+
+        # Restore best model weights
+        if best_model_state is not None:
+            self.model.load_state_dict(best_model_state)
+            logger.info("Restored best model weights (val_loss=%.4f)", best_val_loss)
 
         return self.history
