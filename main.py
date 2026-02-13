@@ -7,11 +7,11 @@ from pipeline import run_pipeline
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
 
 
-def setup_logging() -> str:
+def setup_logging(dataset_name: str) -> str:
     """Configure console + file logging. Returns the log file path."""
     os.makedirs("outputs/logs", exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = f"outputs/logs/run_{timestamp}.txt"
+    log_path = f"outputs/logs/run_bert_{dataset_name}_{timestamp}.txt"
 
     # Root logger — captures all modules that use logging.getLogger(__name__)
     root = logging.getLogger()
@@ -29,11 +29,13 @@ def setup_logging() -> str:
 
 
 if __name__ == "__main__":
-    log_path = setup_logging()
+    # --- Choose dataset ---
+    DATASET_NAME = "huffpost_news"
+
+    log_path = setup_logging(dataset_name=DATASET_NAME)
     logger = logging.getLogger(__name__)
     logger.info("Log file: %s", log_path)
 
-    # --- Choose dataset ---
     # Option 1: BBC News (local folder)
     # results = run_pipeline(
     #     dataset_name="bbc",
@@ -49,18 +51,19 @@ if __name__ == "__main__":
     # )
 
     # Option 3: HuffPost News (from HuggingFace)
+    results = run_pipeline(
+        dataset_name=DATASET_NAME,
+        num_epochs=8,
+        max_samples=None,
+    )
+
+    # Option 4: Reuters-21578 (from HuggingFace, 8 classes)
     # results = run_pipeline(
-    #     dataset_name="huffpost_news",
+    #     dataset_name="reuters",
     #     num_epochs=3,
     #     max_samples=1000,
     # )
 
-    # Option 4: Reuters-21578 (from HuggingFace, 8 classes)
-    results = run_pipeline(
-        dataset_name="reuters",
-        num_epochs=3,
-        max_samples=1000,
-    )
-
+    logger.info("Run saved to: %s", results["run_dir"])
     logger.info("Log saved to %s", log_path)
     print(results["report_str"])

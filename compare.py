@@ -1,37 +1,36 @@
 """
-BERT vs Gemini 2.5 Flash Lite comparison on any supported news dataset.
+BERT vs Gemini 2.5 Flash comparison on the same validation data.
 
-Supports: bbc, ag_news, huffpost_news, reuters.
-
-Runs both models on the same validation set and logs accuracy, macro-F1,
-time, and cost side by side.
+Loads BERT results from a previous training run (python main.py) and runs
+Gemini evaluation with checkpoint/resume support for daily API limits.
 
 Usage:
+    # Auto-detect latest run for huffpost_news:
     python compare.py
+
+    # Specify a run directory:
+    python compare.py --run-dir outputs/runs/huffpost_news_20260213_143022
+
+    # Override daily limit (useful for testing):
+    python compare.py --daily-limit 100
+
+    # Resume an interrupted Gemini run (automatic — just re-run):
+    python compare.py --run-dir outputs/runs/huffpost_news_20260213_143022
 """
 
+import argparse
+import json
 import logging
 import os
-import time
+import sys
 from datetime import datetime
+from pathlib import Path
 
-import torch
 from sklearn.metrics import accuracy_score, f1_score, classification_report
-from datasets import load_dataset
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
 
 from config import Config
-from model.classifier import BertClassifier
-from test.trainer import Trainer
 from gemini.classifier import GeminiClassifier
 from gemini.batch_runner import GeminiBatchRunner
-from data.ag_news_preprocessor import AG_NEWS_LABEL_NAMES
-from data.reuters_preprocessor import REUTERS_LABEL_NAMES
-
-from transformers import BertTokenizer
-from data.text_dataset import TextClassificationDataset
-from torch.utils.data import DataLoader
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
 logger = logging.getLogger(__name__)
@@ -61,225 +60,48 @@ def setup_logging(dataset_name: str) -> str:
     return log_path
 
 
-def load_and_split_data(config: Config, data_path: str | None = None):
-    """
-    Load any supported dataset and split into train/val.
+def find_latest_run(dataset_name: str, base_dir: str = "outputs/runs") -> str:
+    """Find the most recent run directory for a given dataset name."""
+    runs_path = Path(base_dir)
+    if not runs_path.exists():
+        raise FileNotFoundError(f"No runs directory found at {base_dir}")
 
-    Supports: "bbc", "ag_news", "huffpost_news", "reuters".
-
-    Returns (train_texts, val_texts, train_labels_encoded, val_labels_encoded,
-             val_label_names_str, label_names_list).
-    """
-    dataset_name = config.dataset_name
-
-    if dataset_name == "bbc":
-        logger.info("Loading BBC dataset from: %s", data_path)
-        if data_path is None:
-            raise ValueError("data_path is required for the BBC dataset")
-        texts, labels = [], []
-        for category in sorted(os.listdir(data_path)):
-            category_dir = os.path.join(data_path, category)
-            if not os.path.isdir(category_dir):
-                continue
-            for fname in os.listdir(category_dir):
-                with open(os.path.join(category_dir, fname), encoding="utf-8", errors="replace") as f:
-                    texts.append(f.read())
-                    labels.append(category)
-
-        label_encoder = LabelEncoder()
-        labels_encoded = label_encoder.fit_transform(labels).tolist()
-        label_names = list(label_encoder.classes_)
-
-        train_texts, val_texts, train_labels, val_labels = train_test_split(
-            texts, labels_encoded,
-            test_size=config.test_size, stratify=labels_encoded, random_state=42,
+    matching = sorted(
+        [d for d in runs_path.iterdir()
+         if d.is_dir() and d.name.startswith(dataset_name + "_")],
+        key=lambda d: d.name,
+        reverse=True,
+    )
+    if not matching:
+        raise FileNotFoundError(
+            f"No runs found for dataset '{dataset_name}' in {base_dir}. "
+            "Run 'python main.py' first to train BERT."
         )
-        val_label_names = [label_encoder.inverse_transform([idx])[0] for idx in val_labels]
-
-    elif dataset_name == "ag_news":
-        logger.info("Loading AG News dataset from HuggingFace")
-        ds = load_dataset("ag_news")
-        train_ds, val_ds = ds["train"], ds["test"]
-
-        if config.max_samples is not None:
-            train_ds = train_ds.shuffle(seed=42).select(range(min(config.max_samples, len(train_ds))))
-            val_ds = val_ds.shuffle(seed=42).select(range(min(config.max_samples, len(val_ds))))
-
-        train_texts = list(train_ds["text"])
-        train_labels = list(train_ds["label"])
-        val_texts = list(val_ds["text"])
-        val_labels = list(val_ds["label"])
-        label_names = list(AG_NEWS_LABEL_NAMES)
-        val_label_names = [label_names[idx] for idx in val_labels]
-
-    elif dataset_name == "huffpost_news":
-        logger.info("Loading HuffPost News dataset from HuggingFace")
-        ds = load_dataset("heegyu/news-category-dataset")
-        full_ds = ds["train"]
-
-        if config.max_samples is not None:
-            full_ds = full_ds.shuffle(seed=42).select(
-                range(min(config.max_samples, len(full_ds)))
-            )
-
-        texts = [
-            (h + " " + d).strip() if d else h
-            for h, d in zip(full_ds["headline"], full_ds["short_description"])
-        ]
-        labels = list(full_ds["category"])
-
-        label_encoder = LabelEncoder()
-        labels_encoded = label_encoder.fit_transform(labels).tolist()
-        label_names = list(label_encoder.classes_)
-
-        train_texts, val_texts, train_labels, val_labels = train_test_split(
-            texts, labels_encoded,
-            test_size=config.test_size, stratify=labels_encoded, random_state=42,
-        )
-        val_label_names = [label_encoder.inverse_transform([idx])[0] for idx in val_labels]
-
-    elif dataset_name == "reuters":
-        logger.info("Loading Reuters-21578 dataset from HuggingFace")
-        ds = load_dataset("yangwang825/reuters-21578")
-        train_ds, val_ds = ds["train"], ds["test"]
-
-        if config.max_samples is not None:
-            train_ds = train_ds.shuffle(seed=42).select(range(min(config.max_samples, len(train_ds))))
-            val_ds = val_ds.shuffle(seed=42).select(range(min(config.max_samples, len(val_ds))))
-
-        train_texts = list(train_ds["text"])
-        train_labels = list(train_ds["label"])
-        val_texts = list(val_ds["text"])
-        val_labels = list(val_ds["label"])
-        label_names = list(REUTERS_LABEL_NAMES)
-        val_label_names = [label_names[idx] for idx in val_labels]
-
-    else:
-        raise ValueError(
-            f"Unknown dataset: {dataset_name}. "
-            "Use 'bbc', 'ag_news', 'huffpost_news', or 'reuters'."
-        )
-
-    logger.info(
-        "Loaded %s — %d train / %d val samples, %d categories",
-        dataset_name, len(train_texts), len(val_texts), len(label_names),
-    )
-
-    return train_texts, val_texts, train_labels, val_labels, val_label_names, label_names
+    return str(matching[0])
 
 
-def run_bert(
-    train_texts, val_texts, train_labels, val_labels,
-    label_names, config,
-) -> dict:
-    """Train BERT and evaluate on the val set. Returns metrics + timing."""
+def load_bert_run(run_dir: str) -> dict:
+    """Load all BERT run artifacts from a run directory."""
+    with open(os.path.join(run_dir, "run_metadata.json")) as f:
+        metadata = json.load(f)
 
-    tokenizer = BertTokenizer.from_pretrained(config.model_name)
+    with open(os.path.join(run_dir, "bert_eval_metrics.json")) as f:
+        bert_metrics = json.load(f)
 
-    logger.info("=== BERT: Tokenizing ===")
-    train_enc = tokenizer(
-        train_texts, truncation=True, padding="max_length",
-        max_length=config.max_length, return_tensors="pt",
-    )
-    val_enc = tokenizer(
-        val_texts, truncation=True, padding="max_length",
-        max_length=config.max_length, return_tensors="pt",
-    )
+    with open(os.path.join(run_dir, "bert_classification_report.txt")) as f:
+        bert_report_str = f.read()
 
-    train_loader = DataLoader(
-        TextClassificationDataset(train_enc, train_labels),
-        batch_size=config.batch_size, shuffle=True,
-    )
-    val_loader = DataLoader(
-        TextClassificationDataset(val_enc, val_labels),
-        batch_size=config.batch_size,
-    )
-
-    # Build model
-    config.num_labels = len(label_names)
-    model = BertClassifier(config=config)
-
-    # Train
-    logger.info("=== BERT: Training ===")
-    t_start = time.time()
-    trainer = Trainer(model, config=config)
-    trainer.train(train_loader, val_loader)
-    train_time = time.time() - t_start
-
-    # Evaluate
-    logger.info("=== BERT: Evaluating ===")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    model.eval()
-
-    all_preds, all_labels = [], []
-    t_eval_start = time.time()
-    with torch.no_grad():
-        for batch in val_loader:
-            batch = {k: v.to(device) for k, v in batch.items()}
-            preds = model.predict(
-                input_ids=batch["input_ids"],
-                attention_mask=batch["attention_mask"],
-            )
-            all_preds.extend(preds.cpu().tolist())
-            all_labels.extend(batch["labels"].cpu().tolist())
-    eval_time = time.time() - t_eval_start
-
-    accuracy = accuracy_score(all_labels, all_preds)
-    macro_f1 = f1_score(all_labels, all_preds, average="macro")
-
-    labels_range = list(range(len(label_names)))
-    report = classification_report(
-        all_labels, all_preds, target_names=label_names, labels=labels_range
-    )
-    logger.info("BERT Classification Report:\n%s", report)
+    with open(os.path.join(run_dir, "val_data.json")) as f:
+        val_data = json.load(f)
 
     return {
-        "accuracy": accuracy,
-        "macro_f1": macro_f1,
-        "train_time_s": train_time,
-        "eval_time_s": eval_time,
-        "total_time_s": train_time + eval_time,
-        "cost_usd": 0.0,  # Local compute
-        "report": report,
-    }
-
-
-def run_gemini(val_texts, val_label_names, label_names, delay_seconds=1.0) -> dict:
-    """Run Gemini zero-shot classification on the val set. Returns metrics + timing."""
-
-    logger.info("=== Gemini: Classifying ===")
-    classifier = GeminiClassifier(label_names=label_names)
-    runner = GeminiBatchRunner(classifier, delay_seconds=delay_seconds)
-
-    results = runner.run(val_texts, val_label_names)
-
-    # Compute metrics (string-based comparison)
-    preds = results["predictions"]
-    trues = results["true_labels"]
-
-    # For accuracy/F1, treat UNKNOWN as a wrong prediction
-    accuracy = accuracy_score(trues, preds)
-    macro_f1 = f1_score(trues, preds, average="macro", zero_division=0)
-
-    report = classification_report(
-        trues, preds, labels=label_names, zero_division=0,
-    )
-    logger.info("Gemini Classification Report:\n%s", report)
-
-    unknown_count = sum(1 for p in preds if p == "UNKNOWN")
-
-    return {
-        "accuracy": accuracy,
-        "macro_f1": macro_f1,
-        "train_time_s": 0.0,  # No training
-        "eval_time_s": results["elapsed_seconds"],
-        "total_time_s": results["elapsed_seconds"],
-        "cost_usd": results["cost_usd"],
-        "input_tokens": results["total_input_tokens"],
-        "output_tokens": results["total_output_tokens"],
-        "unknown_count": unknown_count,
-        "report": report,
+        "metadata": metadata,
+        "bert_metrics": bert_metrics,
+        "bert_report_str": bert_report_str,
+        "val_texts": val_data["texts"],
+        "val_labels_encoded": val_data["labels_encoded"],
+        "val_label_names_str": val_data["label_names_str"],
+        "label_names": metadata["label_names"],
     }
 
 
@@ -343,62 +165,131 @@ def log_comparison(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # --- Configuration ---
-    DATASET_NAME = "huffpost_news"  # Options: "bbc", "ag_news", "huffpost_news", "reuters"
-    DATA_PATH = None                # Required only for "bbc" (e.g. "bbc")
-    MAX_SAMPLES = None              # Total dataset samples (train + val)
-    NUM_EPOCHS = 8
-    GEMINI_DELAY = 0.5              # Seconds between Gemini API calls
+    parser = argparse.ArgumentParser(
+        description="BERT vs Gemini comparison (loads BERT run, evaluates with Gemini)"
+    )
+    parser.add_argument(
+        "--run-dir", type=str, default=None,
+        help="Path to BERT run directory. If not specified, uses latest run.",
+    )
+    parser.add_argument(
+        "--dataset", type=str, default="huffpost_news",
+        help="Dataset name (used to find latest run if --run-dir not specified)",
+    )
+    parser.add_argument(
+        "--daily-limit", type=int, default=None,
+        help="Override daily Gemini request limit (default: 10000)",
+    )
+    args = parser.parse_args()
 
-    log_path = setup_logging(dataset_name=DATASET_NAME)
+    # 1. Find or validate run directory
+    if args.run_dir:
+        run_dir = args.run_dir
+    else:
+        run_dir = find_latest_run(args.dataset)
+
+    # 2. Setup logging
+    log_path = setup_logging(dataset_name=args.dataset)
     logger.info("Comparison log: %s", log_path)
+    logger.info("Using BERT run: %s", run_dir)
 
-    config = Config(
-        dataset_name=DATASET_NAME,
-        num_epochs=NUM_EPOCHS,
-        max_samples=MAX_SAMPLES,
+    # 3. Load BERT run artifacts
+    bert_run = load_bert_run(run_dir)
+    dataset_name = bert_run["metadata"]["dataset_name"]
+    logger.info(
+        "Loaded BERT run — dataset: %s, %d val samples, %d categories",
+        dataset_name,
+        len(bert_run["val_texts"]),
+        len(bert_run["label_names"]),
     )
 
-    # --- Load data once (shared between BERT and Gemini) ---
-    logger.info("=== Loading Data (%s) ===", DATASET_NAME)
-    (
-        train_texts, val_texts,
-        train_labels, val_labels,
-        val_label_names, label_names,
-    ) = load_and_split_data(config, data_path=DATA_PATH)
+    # 4. Build config for Gemini settings
+    config = Config(dataset_name=dataset_name)
+    if args.daily_limit is not None:
+        config.gemini_daily_limit = args.daily_limit
 
-    # --- Run BERT ---
-    bert_results = run_bert(
-        train_texts, val_texts, train_labels, val_labels,
-        label_names, config,
+    # 5. Run Gemini with checkpoint/resume
+    checkpoint_path = os.path.join(run_dir, "gemini_checkpoint.json")
+
+    logger.info("=== Gemini: Classifying ===")
+    classifier = GeminiClassifier(label_names=bert_run["label_names"])
+    runner = GeminiBatchRunner(
+        classifier,
+        delay_seconds=config.gemini_delay_seconds,
+        daily_limit=config.gemini_daily_limit,
     )
 
-    # --- Run Gemini ---
-    gemini_results = run_gemini(
-        val_texts, val_label_names, label_names,
-        delay_seconds=GEMINI_DELAY,
+    gemini_results = runner.run(
+        bert_run["val_texts"],
+        bert_run["val_label_names_str"],
+        checkpoint_path=checkpoint_path,
     )
 
-    # --- Compare ---
+    # 6. Check if complete
+    if not gemini_results["completed"]:
+        logger.info(
+            "Daily limit reached. Processed %d/%d samples this session (%d total so far).",
+            gemini_results["samples_processed_this_session"],
+            len(bert_run["val_texts"]),
+            gemini_results["total_samples_processed"],
+        )
+        logger.info("Checkpoint saved. Resume with:\n  python compare.py --run-dir %s", run_dir)
+        logger.info("Full log saved to %s", log_path)
+        sys.exit(0)
+
+    # 7. Compute Gemini metrics
+    preds = gemini_results["predictions"]
+    trues = bert_run["val_label_names_str"]
+    label_names = bert_run["label_names"]
+
+    accuracy = accuracy_score(trues, preds)
+    macro_f1 = f1_score(trues, preds, average="macro", zero_division=0)
+    report = classification_report(trues, preds, labels=label_names, zero_division=0)
+    logger.info("Gemini Classification Report:\n%s", report)
+
     gemini_model_name = GeminiClassifier.MODEL_NAME
+    gemini_metrics = {
+        "accuracy": accuracy,
+        "macro_f1": macro_f1,
+        "train_time_s": 0.0,
+        "eval_time_s": gemini_results["elapsed_seconds"],
+        "total_time_s": gemini_results["elapsed_seconds"],
+        "cost_usd": gemini_results["cost_usd"],
+        "input_tokens": gemini_results["total_input_tokens"],
+        "output_tokens": gemini_results["total_output_tokens"],
+        "unknown_count": sum(1 for p in preds if p == "UNKNOWN"),
+        "report": report,
+    }
+
+    # 8. Build BERT metrics dict for comparison (from saved artifacts)
+    bert_metrics = {
+        "accuracy": bert_run["bert_metrics"]["accuracy"],
+        "macro_f1": bert_run["bert_metrics"]["macro_f1"],
+        "train_time_s": bert_run["bert_metrics"].get("train_time_s", 0),
+        "eval_time_s": bert_run["bert_metrics"].get("eval_time_s", 0),
+        "total_time_s": bert_run["bert_metrics"].get("total_time_s", 0),
+        "cost_usd": 0.0,
+        "report": bert_run["bert_report_str"],
+    }
+
+    # 9. Log comparison
     summary = log_comparison(
-        bert_results, gemini_results, len(val_texts),
-        dataset_name=DATASET_NAME,
-        bert_model_name=config.model_name,
+        bert_metrics, gemini_metrics, len(bert_run["val_texts"]),
+        dataset_name=dataset_name,
+        bert_model_name=bert_run["metadata"]["model_name"],
         gemini_model_name=gemini_model_name,
     )
     logger.info("\n%s", summary)
 
-    # Also save comparison to a dedicated file
-    os.makedirs("outputs", exist_ok=True)
+    # 10. Save comparison file to run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    comparison_path = f"outputs/comparison_bert_{DATASET_NAME}_{timestamp}.txt"
+    comparison_path = os.path.join(run_dir, f"comparison_{timestamp}.txt")
     with open(comparison_path, "w") as f:
         f.write(summary)
-        f.write(f"\n\n--- BERT ({config.model_name}) Classification Report ---\n")
-        f.write(bert_results["report"])
+        f.write(f"\n\n--- BERT ({bert_run['metadata']['model_name']}) Classification Report ---\n")
+        f.write(bert_metrics["report"])
         f.write(f"\n\n--- Gemini ({gemini_model_name}) Classification Report ---\n")
-        f.write(gemini_results["report"])
+        f.write(gemini_metrics["report"])
 
     logger.info("Comparison saved to %s", comparison_path)
     logger.info("Full log saved to %s", log_path)

@@ -12,17 +12,17 @@ logger = logging.getLogger(__name__)
 
 class GeminiClassifier:
     """
-    Zero-shot text classifier using Gemini 2.5 Flash Lite.
+    Zero-shot text classifier using Gemini 2.5 Flash.
 
     Sends a classification prompt for each text and parses the response
     into one of the valid category labels.
     """
 
-    MODEL_NAME = "gemini-2.5-flash-lite"
+    MODEL_NAME = "gemini-2.5-flash"
 
     # Pricing per 1M tokens (USD) — source: https://ai.google.dev/gemini-api/docs/pricing
-    COST_PER_1M_INPUT_TOKENS = 0.10
-    COST_PER_1M_OUTPUT_TOKENS = 0.40
+    COST_PER_1M_INPUT_TOKENS = 0.15
+    COST_PER_1M_OUTPUT_TOKENS = 0.60
 
     def __init__(self, label_names: list[str], api_key: str | None = None):
         self.label_names = label_names

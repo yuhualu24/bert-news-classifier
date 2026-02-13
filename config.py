@@ -23,7 +23,7 @@ class Config:
     truncation: bool = True
 
     # Data split
-    test_size: float = 0.2
+    test_size: float = 0.1
     random_state: int = 42
 
     # Training
@@ -32,6 +32,10 @@ class Config:
     weight_decay: float = 0.01
     num_epochs: int = 3
     early_stopping_patience: int = 2  # Stop after N epochs with no val_loss improvement
+
+    # Gemini settings (used by compare.py)
+    gemini_daily_limit: int = 10_000
+    gemini_delay_seconds: float = 0.5
 
     # Label ordering (alphabetical by default, set after loading)
     label_names: List[str] = field(default_factory=list)
