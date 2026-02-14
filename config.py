@@ -9,7 +9,6 @@ class Config:
     max_samples: Optional[int] = None  # limit training/val samples (useful for large datasets)
 
     # Paths
-    raw_data_dir: str = "bbc"
     output_dir: str = "outputs"
 
     # Model

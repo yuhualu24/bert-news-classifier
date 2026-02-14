@@ -36,10 +36,9 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     logger.info("Log file: %s", log_path)
 
-    # Option 1: BBC News (local folder)
+    # Option 1: BBC News (from HuggingFace)
     # results = run_pipeline(
     #     dataset_name="bbc",
-    #     data_path="bbc",
     #     num_epochs=3,
     # )
 

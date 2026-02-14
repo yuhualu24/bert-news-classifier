@@ -46,7 +46,6 @@ def _log_config(config: Config) -> None:
 
 def run_pipeline(
     dataset_name: str = "bbc",
-    data_path: str | None = None,
     num_epochs: int = 3,
     max_samples: int | None = None,
 ) -> dict:
@@ -68,13 +67,9 @@ def run_pipeline(
 
     logger.info("=== Data Preprocessing ===")
     if dataset_name == "bbc":
-        if data_path is None:
-            raise ValueError("data_path is required for the BBC dataset")
         preprocessor = BBCDataPreprocessor(
-            data_path,
             model_name=config.model_name,
             max_length=config.max_length,
-            test_size=config.test_size,
             batch_size=config.batch_size,
         )
     elif dataset_name == "ag_news":
@@ -88,6 +83,7 @@ def run_pipeline(
         preprocessor = HuffPostNewsPreprocessor(
             model_name=config.model_name,
             max_length=config.max_length,
+            test_size=config.test_size,
             batch_size=config.batch_size,
             max_samples=config.max_samples,
         )

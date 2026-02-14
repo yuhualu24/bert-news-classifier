@@ -1,8 +1,6 @@
-import os
 import logging
 
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
+from datasets import load_dataset
 from transformers import BertTokenizer
 from torch.utils.data import DataLoader
 from data.text_dataset import TextClassificationDataset
@@ -10,82 +8,83 @@ from data.preprocessor_result import PreprocessorResult
 
 logger = logging.getLogger(__name__)
 
+BBC_LABEL_NAMES = ["business", "entertainment", "politics", "sport", "tech"]
+
 
 class BBCDataPreprocessor:
     """
     Preprocesses the BBC News dataset for BERT classification.
 
+    Loads the dataset from HuggingFace (SetFit/bbc-news) which provides
+    pre-defined train/test splits with 5 categories.
+
     Usage:
-        preprocessor = BBCDataPreprocessor("path/to/bbc")
-        train_loader, val_loader = preprocessor.run()
+        preprocessor = BBCDataPreprocessor()
+        result = preprocessor.run()
     """
 
     def __init__(
         self,
-        bbc_data_folder_path: str,
         model_name: str = "bert-base-uncased",
         max_length: int = 512,
-        test_size: float = 0.2,
         batch_size: int = 16,
     ):
-        self.data_path = bbc_data_folder_path
         self.max_length = max_length
-        self.test_size = test_size
         self.batch_size = batch_size
 
         self.tokenizer = BertTokenizer.from_pretrained(model_name)
-        self.label_encoder = LabelEncoder()
-
-    def load_raw_data(self) -> tuple[list[str], list[str]]:
-        """Read all .txt files from the category-folder structure."""
-        texts, labels = [], []
-        for category in sorted(os.listdir(self.data_path)):
-            category_dir = os.path.join(self.data_path, category)
-            if not os.path.isdir(category_dir):
-                continue
-            for fname in os.listdir(category_dir):
-                with open(os.path.join(category_dir, fname), encoding="utf-8", errors="replace") as f:
-                    texts.append(f.read())
-                    labels.append(category)
-
-        logger.info("Loaded %d articles across %s", len(texts), sorted(set(labels)))
-        return texts, labels
 
     def run(self) -> PreprocessorResult:
-        """Load -> encode -> split -> tokenize -> DataLoaders."""
-        texts, labels = self.load_raw_data()
-        labels_encoded = self.label_encoder.fit_transform(labels).tolist()
+        """Load from HuggingFace -> tokenize -> DataLoaders."""
+        ds = load_dataset("SetFit/bbc-news")
 
-        train_texts, val_texts, train_labels, val_labels = train_test_split(
-            texts, labels_encoded,
-            test_size=self.test_size, stratify=labels_encoded, random_state=42,
+        train_split = ds["train"]
+        val_split = ds["test"]
+
+        train_texts = train_split["text"]
+        train_labels = train_split["label"]
+        val_texts = val_split["text"]
+        val_labels = val_split["label"]
+        val_label_names_str = val_split["label_text"]
+
+        logger.info(
+            "Loaded BBC News — %d train / %d val samples across %d categories",
+            len(train_texts), len(val_texts), len(BBC_LABEL_NAMES),
         )
 
-        val_label_names_str = [
-            self.label_encoder.inverse_transform([idx])[0] for idx in val_labels
-        ]
+        train_enc = self.tokenizer(
+            train_texts, truncation=True, padding="max_length",
+            max_length=self.max_length, return_tensors="pt",
+        )
+        val_enc = self.tokenizer(
+            val_texts, truncation=True, padding="max_length",
+            max_length=self.max_length, return_tensors="pt",
+        )
 
-        train_enc = self.tokenizer(train_texts, truncation=True, padding="max_length", max_length=self.max_length, return_tensors="pt")
-        val_enc = self.tokenizer(val_texts, truncation=True, padding="max_length", max_length=self.max_length, return_tensors="pt")
+        train_loader = DataLoader(
+            TextClassificationDataset(train_enc, train_labels),
+            batch_size=self.batch_size, shuffle=True,
+        )
+        val_loader = DataLoader(
+            TextClassificationDataset(val_enc, val_labels),
+            batch_size=self.batch_size,
+        )
 
-        train_loader = DataLoader(TextClassificationDataset(train_enc, train_labels), batch_size=self.batch_size, shuffle=True)
-        val_loader = DataLoader(TextClassificationDataset(val_enc, val_labels), batch_size=self.batch_size)
-
-        logger.info("Ready -> %d train / %d val samples", len(train_labels), len(val_labels))
+        logger.info("Ready -> %d train / %d val batches", len(train_loader), len(val_loader))
         return PreprocessorResult(
             train_loader=train_loader,
             val_loader=val_loader,
             val_texts=val_texts,
             val_labels_encoded=val_labels,
             val_label_names_str=val_label_names_str,
-            label_names=list(self.label_encoder.classes_),
-            num_labels=len(self.label_encoder.classes_),
+            label_names=BBC_LABEL_NAMES,
+            num_labels=len(BBC_LABEL_NAMES),
         )
 
     @property
     def num_labels(self) -> int:
-        return len(self.label_encoder.classes_)
+        return len(BBC_LABEL_NAMES)
 
     @property
     def label_names(self) -> list[str]:
-        return list(self.label_encoder.classes_)
+        return BBC_LABEL_NAMES
