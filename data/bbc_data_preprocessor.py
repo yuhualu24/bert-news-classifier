@@ -8,7 +8,8 @@ from data.preprocessor_result import PreprocessorResult
 
 logger = logging.getLogger(__name__)
 
-BBC_LABEL_NAMES = ["business", "entertainment", "politics", "sport", "tech"]
+# Order must match HuggingFace integer labels: 0=tech, 1=business, 2=sport, 3=entertainment, 4=politics
+BBC_LABEL_NAMES = ["tech", "business", "sport", "entertainment", "politics"]
 
 
 class BBCDataPreprocessor:
@@ -41,11 +42,11 @@ class BBCDataPreprocessor:
         train_split = ds["train"]
         val_split = ds["test"]
 
-        train_texts = train_split["text"]
-        train_labels = train_split["label"]
-        val_texts = val_split["text"]
-        val_labels = val_split["label"]
-        val_label_names_str = val_split["label_text"]
+        train_texts = list(train_split["text"])
+        train_labels = list(train_split["label"])
+        val_texts = list(val_split["text"])
+        val_labels = list(val_split["label"])
+        val_label_names_str = list(val_split["label_text"])
 
         logger.info(
             "Loaded BBC News — %d train / %d val samples across %d categories",
